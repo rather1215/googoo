@@ -1,4 +1,5 @@
-import { Award, Home, Play, RotateCcw, Star, Trophy } from 'lucide-react';
+import { Award, Clock, Home, Play, RotateCcw, Star, Trophy } from 'lucide-react';
+import { formatPlayTime } from '../game/leaderboard';
 import { StageId, StageStats } from '../game/types';
 import { PixelSpriteCanvas } from './PixelSpriteCanvas';
 
@@ -167,24 +168,31 @@ export function StageClearModal({
         </p>
 
         {/* Summary Stats */}
-        <div className="mt-6 grid grid-cols-3 gap-3 rounded-2xl border-2 border-[#E5DEC9] bg-[#F5EFE0] p-4 tabular-nums">
+        <div className="mt-6 grid grid-cols-2 gap-3 rounded-2xl border-2 border-[#E5DEC9] bg-[#F5EFE0] p-4 sm:grid-cols-4 tabular-nums">
           <div>
             <p className="text-xs font-bold text-slate-600">획득한 별</p>
-            <p className="font-display mt-1 flex items-center justify-center gap-1 text-2xl text-amber-600">
+            <p className="font-display mt-1 flex items-center justify-center gap-1 text-xl text-amber-600 sm:text-2xl">
               <Star className="h-5 w-5 fill-amber-400 text-amber-500" />
               <span>{stats.starsEarned}개</span>
             </p>
           </div>
           <div>
             <p className="text-xs font-bold text-slate-600">해결한 문제</p>
-            <p className="font-display mt-1 text-2xl text-slate-900">
+            <p className="font-display mt-1 text-xl text-slate-900 sm:text-2xl">
               {stats.solvedCount}개
             </p>
           </div>
           <div>
             <p className="text-xs font-bold text-slate-600">첫 시도 정답률</p>
-            <p className="font-display mt-1 text-2xl text-emerald-700">
+            <p className="font-display mt-1 text-xl text-emerald-700 sm:text-2xl">
               {accuracy}%
+            </p>
+          </div>
+          <div>
+            <p className="text-xs font-bold text-slate-600">플레이 시간</p>
+            <p className="font-display mt-1 flex items-center justify-center gap-1 text-xl text-sky-700 sm:text-2xl">
+              <Clock className="h-4 w-4 shrink-0" />
+              <span>{formatPlayTime(stats.elapsedSeconds)}</span>
             </p>
           </div>
         </div>

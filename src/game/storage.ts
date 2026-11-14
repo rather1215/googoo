@@ -1,8 +1,9 @@
-import { ActiveRunState, SavedProgress, StageId } from './types';
+import { ActiveRunState, HeroId, SavedProgress, StageId } from './types';
 
 const STORAGE_KEY = 'gugudan_maze_explorers_save_v1';
 
 const DEFAULT_PROGRESS: SavedProgress = {
+  selectedHero: 'explorer',
   unlockedStages: [1],
   records: {
     1: { cleared: false, bestStars: 0, bestAccuracy: 0, solvedCount: 0 },
@@ -11,6 +12,7 @@ const DEFAULT_PROGRESS: SavedProgress = {
   },
   totalStars: 0,
   totalSolved: 0,
+  totalPlayTimeSeconds: 0,
   activeRun: null,
 };
 
@@ -20,7 +22,11 @@ export function loadProgress(): SavedProgress {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_PROGRESS;
     const parsed = JSON.parse(raw) as Partial<SavedProgress>;
+    const validHeroes: HeroId[] = ['explorer', 'knight', 'mage', 'cat_ranger'];
     return {
+      selectedHero: validHeroes.includes(parsed.selectedHero as HeroId)
+        ? (parsed.selectedHero as HeroId)
+        : 'explorer',
       unlockedStages: Array.isArray(parsed.unlockedStages) && parsed.unlockedStages.length > 0
         ? (parsed.unlockedStages as StageId[])
         : [1],
@@ -30,11 +36,23 @@ export function loadProgress(): SavedProgress {
       },
       totalStars: typeof parsed.totalStars === 'number' ? parsed.totalStars : 0,
       totalSolved: typeof parsed.totalSolved === 'number' ? parsed.totalSolved : 0,
+      totalPlayTimeSeconds:
+        typeof parsed.totalPlayTimeSeconds === 'number' ? parsed.totalPlayTimeSeconds : 0,
       activeRun: parsed.activeRun ?? null,
     };
   } catch {
     return DEFAULT_PROGRESS;
   }
+}
+
+export function saveSelectedHero(heroId: HeroId): SavedProgress {
+  const current = loadProgress();
+  const next: SavedProgress = {
+    ...current,
+    selectedHero: heroId,
+  };
+  saveProgress(next);
+  return next;
 }
 
 export function saveProgress(progress: SavedProgress): void {
@@ -60,7 +78,8 @@ export function recordStageClear(
   stageId: StageId,
   starsEarned: number,
   accuracy: number,
-  solvedCount: number
+  solvedCount: number,
+  elapsedSeconds = 0
 ): SavedProgress {
   const current = loadProgress();
   const prevRecord = current.records[stageId];
@@ -84,10 +103,12 @@ export function recordStageClear(
   );
 
   const next: SavedProgress = {
+    selectedHero: current.selectedHero,
     unlockedStages: Array.from(nextUnlocked).sort() as StageId[],
     records: updatedRecords,
     totalStars,
     totalSolved: current.totalSolved + solvedCount,
+    totalPlayTimeSeconds: current.totalPlayTimeSeconds + Math.max(0, Math.round(elapsedSeconds)),
     activeRun: null,
   };
 

@@ -25,7 +25,7 @@ const STEPS = [
   {
     num: 3,
     text: '몬스터를 만나면 구구단 공격으로 물리쳐요.',
-    detail: '정답을 맞히면 몬스터의 체력이 줄고, 틀리면 하트가 1개 줄어들어요.',
+    detail: '제한 시간 안에 답을 누르면 즉시 공격해요! 틀리거나 시간이 지나면 하트가 줄어요.',
     sprite: 'green_slime' as const,
     icon: Swords,
     accent: 'bg-rose-100 text-rose-800 border-rose-300',

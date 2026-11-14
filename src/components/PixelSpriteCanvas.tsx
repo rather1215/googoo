@@ -6,7 +6,7 @@ import {
   drawMonsterSprite,
   drawPlayerSprite,
 } from '../game/sprites';
-import { MonsterKind, StageDefinition } from '../game/types';
+import { HeroId, MonsterKind, StageDefinition } from '../game/types';
 
 export type SpritePreviewKind =
   | 'player'
@@ -17,6 +17,7 @@ export type SpritePreviewKind =
 
 interface PixelSpriteCanvasProps {
   kind: SpritePreviewKind;
+  heroId?: HeroId;
   size?: number;
   theme?: StageDefinition['theme'];
   hurtFlash?: boolean;
@@ -26,6 +27,7 @@ interface PixelSpriteCanvasProps {
 
 export function PixelSpriteCanvas({
   kind,
+  heroId = 'explorer',
   size = 80,
   theme = 'forest',
   hurtFlash = false,
@@ -46,7 +48,7 @@ export function PixelSpriteCanvas({
       ctx.clearRect(0, 0, size, size);
 
       if (kind === 'player') {
-        drawPlayerSprite(ctx, 0, 0, size, 'down', false, time);
+        drawPlayerSprite(ctx, 0, 0, size, 'down', false, time, heroId, hurtFlash);
       } else if (kind === 'chest') {
         drawChestSprite(ctx, 0, 0, size, false, time);
       } else if (kind === 'door') {
@@ -64,7 +66,7 @@ export function PixelSpriteCanvas({
 
     rafId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(rafId);
-  }, [kind, size, theme, hurtFlash, animate]);
+  }, [kind, heroId, size, theme, hurtFlash, animate]);
 
   return (
     <canvas

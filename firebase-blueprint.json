@@ -1,0 +1,89 @@
+{
+  "entities": {
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Public classroom leaderboard record for a student in 구구단 미로 탐험대",
+      "type": "object",
+      "properties": {
+        "studentId": {
+          "type": "string",
+          "description": "Deterministic ASCII student identifier derived from nickname",
+          "minLength": 4,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_-]+$"
+        },
+        "nickname": {
+          "type": "string",
+          "description": "Student display nickname",
+          "minLength": 1,
+          "maxLength": 20
+        },
+        "score": {
+          "type": "integer",
+          "description": "Total accumulated adventure score"
+        },
+        "stars": {
+          "type": "integer",
+          "description": "Total stars collected across adventures"
+        },
+        "solvedCount": {
+          "type": "integer",
+          "description": "Total multiplication problems solved"
+        },
+        "clearedStages": {
+          "type": "integer",
+          "description": "Highest number of distinct stages cleared (0 to 3)"
+        },
+        "bestAccuracy": {
+          "type": "integer",
+          "description": "Best first-try accuracy percentage (0 to 100)"
+        },
+        "playTimeSeconds": {
+          "type": "integer",
+          "description": "Total accumulated active gameplay time in seconds"
+        },
+        "isPublic": {
+          "type": "boolean",
+          "description": "Marks record as readable on the classroom leaderboard"
+        },
+        "classCode": {
+          "type": "string",
+          "description": "Classroom access verification code (2026)",
+          "minLength": 4,
+          "maxLength": 4,
+          "pattern": "^2026$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the student record was created"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the student record was last updated"
+        }
+      },
+      "required": [
+        "studentId",
+        "nickname",
+        "score",
+        "stars",
+        "solvedCount",
+        "clearedStages",
+        "bestAccuracy",
+        "playTimeSeconds",
+        "isPublic",
+        "classCode",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/leaderboard/{studentId}": {
+      "schema": { "$ref": "#/entities/LeaderboardEntry" },
+      "description": "Real-time classroom leaderboard entries keyed by deterministic studentId"
+    }
+  }
+}

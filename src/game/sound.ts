@@ -69,6 +69,10 @@ class SoundEngine {
     this.playTone(520, 0.06, 'triangle', 0.06);
   }
 
+  playTick() {
+    this.playTone(880, 0.04, 'square', 0.04);
+  }
+
   playCorrect() {
     this.playTone(523.25, 0.09, 'triangle', 0.09, 0);
     this.playTone(659.25, 0.09, 'triangle', 0.09, 0.07);

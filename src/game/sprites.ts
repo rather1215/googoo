@@ -1,4 +1,4 @@
-import { ChestEntity, Direction, DoorEntity, FloatingText, MonsterEntity, MonsterKind, Particle, StageDefinition } from './types';
+import { ChestEntity, Direction, DoorEntity, FloatingText, HeroId, MonsterEntity, MonsterKind, Particle, StageDefinition } from './types';
 
 // Draw a 16x16 pixel matrix onto a canvas context at (x, y) with pixel size s
 function drawPixelGrid(
@@ -34,18 +34,59 @@ function drawPixelGrid(
   }
 }
 
-const PLAYER_PALETTE: Record<string, string> = {
-  K: '#241914', // dark outline
-  H: '#E04F33', // red/orange explorer cap
-  h: '#FF785A', // cap highlight
-  S: '#FFD5B5', // skin
-  s: '#F2B48D', // skin shadow
-  E: '#1E1B18', // eyes
-  B: '#3B82F6', // blue tunic
-  b: '#2563EB', // tunic shadow
-  G: '#FBBF24', // gold buckle / badge
-  P: '#78350F', // boots / belt
-  W: '#FFFFFF', // white highlight
+const HERO_PALETTES: Record<HeroId, Record<string, string>> = {
+  explorer: {
+    K: '#241914',
+    H: '#E04F33', // red explorer cap
+    h: '#FF785A',
+    S: '#FFD5B5',
+    s: '#F2B48D',
+    E: '#1E1B18',
+    B: '#3B82F6', // blue tunic
+    b: '#2563EB',
+    G: '#FBBF24', // gold buckle
+    P: '#78350F', // boots/belt
+    W: '#FFFFFF',
+  },
+  knight: {
+    K: '#1E293B',
+    H: '#CBD5E1', // silver helmet
+    h: '#F8FAFC',
+    S: '#FFD5B5',
+    s: '#F2B48D',
+    E: '#1E1B18',
+    B: '#64748B', // steel armor
+    b: '#475569',
+    G: '#F59E0B', // gold crest/trim
+    P: '#B45309', // leather boots
+    W: '#FFFFFF',
+  },
+  mage: {
+    K: '#1E1B4B',
+    H: '#6D28D9', // wizard hat
+    h: '#A78BFA',
+    S: '#FFE0C2',
+    s: '#F2B48D',
+    E: '#1E1B18',
+    B: '#4F46E5', // indigo robe
+    b: '#3730A3',
+    G: '#FDE047', // star gold trim
+    P: '#312E81',
+    W: '#FFFFFF',
+  },
+  cat_ranger: {
+    K: '#1B2E20',
+    H: '#F59E0B', // amber cat hood
+    h: '#FDE047',
+    S: '#FFE4C8',
+    s: '#F2B48D',
+    E: '#14532D',
+    B: '#16A34A', // forest green cape
+    b: '#15803D',
+    G: '#FEF08A',
+    P: '#78350F',
+    W: '#FFFFFF',
+  },
 };
 
 const PLAYER_DOWN_0 = [
@@ -200,6 +241,44 @@ const BOSS_GRID = [
   '................',
 ];
 
+const CAT_DOWN_0 = [
+  '..KK........KK..',
+  '.KHHK.KKKK.KhhK.',
+  '.KHHHHHHHHHHHHK.',
+  '..KGGGGGGGGGGK..',
+  '..KSSSSSSSSSSK..',
+  '..KSESSSSSESSK..',
+  '..KSSSSSSSSSSK..',
+  '...KBBBBBBBBK...',
+  '..KBBBGGGGBBBK..',
+  '..KSBBBBBBBBSSK.',
+  '....KPPPPPPK....',
+  '....KBBBBBBK....',
+  '....KbbKKbbK....',
+  '....KPPKKPPK....',
+  '....KKK..KKK....',
+  '................',
+];
+
+const MAGE_DOWN_0 = [
+  '.....KKKKKK.....',
+  '....KHHHHhhK....',
+  '...KHHHHHHHHK...',
+  '.KKGGGGGGGGGGKK.',
+  '..KSSSSSSSSSSK..',
+  '..KSESSSSSESSK..',
+  '..KSSSSSSSSSSK..',
+  '...KBBBBBBBBK...',
+  '..KBBBGGGGBBBK..',
+  '..KSBBBBBBBBSSK.',
+  '....KPPPPPPK....',
+  '....KBBBBBBK....',
+  '....KbbKKbbK....',
+  '....KPPKKPPK....',
+  '....KKK..KKK....',
+  '................',
+];
+
 export function drawPlayerSprite(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -207,7 +286,9 @@ export function drawPlayerSprite(
   size: number,
   facing: Direction,
   isMoving: boolean,
-  time: number
+  time: number,
+  heroId: HeroId = 'explorer',
+  hurtFlash = false
 ) {
   // Ground shadow
   ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
@@ -222,7 +303,9 @@ export function drawPlayerSprite(
   let flipX = false;
 
   if (facing === 'down') {
-    grid = walkFrame ? PLAYER_DOWN_1 : PLAYER_DOWN_0;
+    if (heroId === 'cat_ranger' && !walkFrame) grid = CAT_DOWN_0;
+    else if (heroId === 'mage' && !walkFrame) grid = MAGE_DOWN_0;
+    else grid = walkFrame ? PLAYER_DOWN_1 : PLAYER_DOWN_0;
   } else if (facing === 'up') {
     grid = PLAYER_UP_0;
   } else if (facing === 'right') {
@@ -233,7 +316,17 @@ export function drawPlayerSprite(
     flipX = true;
   }
 
-  drawPixelGrid(ctx, grid, PLAYER_PALETTE, x, y + bobY, size, flipX);
+  let palette = HERO_PALETTES[heroId];
+  if (hurtFlash) {
+    const strobeWhite = Math.floor(time / 55) % 2 === 0;
+    const flashPalette: Record<string, string> = {};
+    for (const key of Object.keys(palette)) {
+      flashPalette[key] = key === 'K' ? '#7F1D1D' : strobeWhite ? '#FFFFFF' : '#FCA5A5';
+    }
+    palette = flashPalette;
+  }
+
+  drawPixelGrid(ctx, grid, palette, x, y + bobY, size, flipX);
 }
 
 export function drawMonsterSprite(
@@ -309,10 +402,11 @@ export function drawMonsterSprite(
   }
 
   if (hurtFlash) {
-    // Tint white flash when hit
+    // Strobe bright white and crimson when struck
+    const strobeWhite = Math.floor(time / 55) % 2 === 0;
     const flashPalette: Record<string, string> = {};
     for (const key of Object.keys(palette)) {
-      flashPalette[key] = key === 'K' ? '#7F1D1D' : '#FFFFFF';
+      flashPalette[key] = key === 'K' ? '#7F1D1D' : strobeWhite ? '#FFFFFF' : '#F87171';
     }
     palette = flashPalette;
   }
@@ -507,8 +601,8 @@ export function drawTile(
       ctx.fillRect(x, y, size, size);
       ctx.strokeStyle = 'rgba(30, 22, 45, 0.18)';
       ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
-      // Royal red carpet on Throne Room & main center column 8
-      if (col === 8 && row >= 1 && row <= 5) {
+      // Royal red carpet on Throne Room & main center column 11
+      if (col === 11 && row >= 1 && row <= 5) {
         ctx.fillStyle = '#BE123C';
         ctx.fillRect(x + 6, y, size - 12, size);
         ctx.fillStyle = '#FBBF24';
@@ -643,6 +737,7 @@ export function drawMazeScene(params: {
   playerVisualY: number;
   facing: Direction;
   isMoving: boolean;
+  heroId: HeroId;
   doors: DoorEntity[];
   monsters: MonsterEntity[];
   chests: ChestEntity[];
@@ -659,6 +754,7 @@ export function drawMazeScene(params: {
     playerVisualY,
     facing,
     isMoving,
+    heroId,
     doors,
     monsters,
     chests,
@@ -726,7 +822,8 @@ export function drawMazeScene(params: {
     tileSize,
     facing,
     isMoving,
-    time
+    time,
+    heroId
   );
 
   // 8. Interact prompt on top of target

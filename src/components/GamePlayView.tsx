@@ -4,6 +4,8 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  Clock,
+  Gamepad2,
   Hand,
   Heart,
   KeyRound,
@@ -14,6 +16,7 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
+import { formatClockTime, ScoreDelta, StudentSession } from '../game/leaderboard';
 import { pickQuestion } from '../game/questions';
 import { sound } from '../game/sound';
 import { drawMazeScene } from '../game/sprites';
@@ -39,16 +42,22 @@ import { GameOverModal, PauseModal, StageClearModal } from './StageModals';
 
 interface GamePlayViewProps {
   initialRun: ActiveRunState;
+  studentSession: StudentSession;
+  myLiveScore: number;
+  onSyncScore: (delta: ScoreDelta) => void;
   onProgressUpdated: (next: SavedProgress) => void;
   onGoHome: () => void;
   onSwitchStage: (stageId: StageId) => void;
 }
 
-const TILE_SIZE = 44;
+const TILE_SIZE = 48; // Exact 3x integer scale for 16x16 pixel sprites
 const MOVE_DURATION_MS = 135;
 
 export function GamePlayView({
   initialRun,
+  studentSession,
+  myLiveScore,
+  onSyncScore,
   onProgressUpdated,
   onGoHome,
   onSwitchStage,
@@ -64,7 +73,13 @@ export function GamePlayView({
   const [goldenKeys, setGoldenKeys] = useState(initialRun.goldenKeys);
   const [checkpoint, setCheckpoint] = useState(initialRun.checkpoint);
   const [wrongPool, setWrongPool] = useState<string[]>(initialRun.wrongQuestionKeys);
-  const [stats, setStats] = useState<StageStats>(initialRun.stats);
+  const [stats, setStats] = useState<StageStats>({
+    ...initialRun.stats,
+    elapsedSeconds: initialRun.stats.elapsedSeconds ?? 0,
+  });
+  const [elapsedSeconds, setElapsedSeconds] = useState<number>(
+    initialRun.stats.elapsedSeconds ?? 0
+  );
 
   const [doors, setDoors] = useState<DoorEntity[]>(() =>
     stage.doors.map((d) => ({
@@ -87,14 +102,23 @@ export function GamePlayView({
 
   const [paused, setPaused] = useState(false);
   const [muted, setMuted] = useState(sound.isMuted());
+  const [showTouchDpad, setShowTouchDpad] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < 768 || window.matchMedia?.('(pointer: coarse)').matches;
+  });
   const [activeDoor, setActiveDoor] = useState<{ door: DoorEntity; question: Question } | null>(null);
   const [activeBattle, setActiveBattle] = useState<{ monster: MonsterEntity; question: Question } | null>(null);
   const [isGameOver, setIsGameOver] = useState(false);
   const [isStageCleared, setIsStageCleared] = useState(false);
   const [bannerToast, setBannerToast] = useState<string | null>(null);
+  const [canvasBoxSize, setCanvasBoxSize] = useState<{ width: number; height: number } | null>(
+    null
+  );
 
   const lastQuestionKeyRef = useRef<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const mainAreaRef = useRef<HTMLElement | null>(null);
+  const pendingPlayTimeRef = useRef<number>(0);
 
   // Smooth visual movement state stored in refs for 60fps Canvas loop
   const moveAnimRef = useRef<{
@@ -121,6 +145,93 @@ export function GamePlayView({
   const isOverlayOpen = Boolean(
     paused || activeDoor || activeBattle || isGameOver || isStageCleared
   );
+
+  // Lock page scroll to top when entering gameplay view
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, []);
+
+  // Dynamically expand maze canvas to fill maximum available viewport area cleanly
+  useEffect(() => {
+    const el = mainAreaRef.current;
+    if (!el) return;
+
+    const updateSize = () => {
+      const rect = el.getBoundingClientRect();
+      const padX = window.innerWidth >= 640 ? 28 : 16;
+      const padY = window.innerWidth >= 640 ? 20 : 12;
+      const availW = Math.max(240, rect.width - padX);
+      const availH = Math.max(200, rect.height - padY);
+      const aspect = stage.width / stage.height;
+
+      let w = availW;
+      let h = w / aspect;
+      if (h > availH) {
+        h = availH;
+        w = h * aspect;
+      }
+      setCanvasBoxSize({
+        width: Math.floor(w),
+        height: Math.floor(h),
+      });
+    };
+
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [stage.width, stage.height]);
+
+  // Refocus game container without scrolling whenever overlays close
+  const prevOverlayOpenRef = useRef(isOverlayOpen);
+  useEffect(() => {
+    if (prevOverlayOpenRef.current && !isOverlayOpen) {
+      mainAreaRef.current?.focus({ preventScroll: true });
+    }
+    prevOverlayOpenRef.current = isOverlayOpen;
+  }, [isOverlayOpen]);
+
+  // Sync score & flush pending active playtime seconds to Firestore
+  const syncWithPlayTime = useCallback(
+    (delta: ScoreDelta) => {
+      const timeDelta = pendingPlayTimeRef.current;
+      pendingPlayTimeRef.current = 0;
+      onSyncScore({
+        ...delta,
+        playTimeDelta: (delta.playTimeDelta ?? 0) + timeDelta,
+      });
+    },
+    [onSyncScore]
+  );
+
+  const flushPendingPlayTime = useCallback(() => {
+    const timeDelta = pendingPlayTimeRef.current;
+    if (timeDelta <= 0) return;
+    pendingPlayTimeRef.current = 0;
+    onSyncScore({
+      scoreDelta: 0,
+      starsDelta: 0,
+      solvedDelta: 0,
+      playTimeDelta: timeDelta,
+    });
+  }, [onSyncScore]);
+
+  // Flush unsynced playtime on unmount
+  useEffect(() => {
+    return () => {
+      flushPendingPlayTime();
+    };
+  }, [flushPendingPlayTime]);
+
+  // Active gameplay timer (counts 1s ticks while playing, paused during Pause/GameOver/Clear)
+  useEffect(() => {
+    if (paused || isGameOver || isStageCleared) return;
+    const id = window.setInterval(() => {
+      pendingPlayTimeRef.current += 1;
+      setElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [paused, isGameOver, isStageCleared]);
 
   const showToast = useCallback((msg: string) => {
     setBannerToast(msg);
@@ -167,6 +278,7 @@ export function GamePlayView({
     if (isStageCleared) return;
     const runState: ActiveRunState = {
       stageId: stage.id,
+      heroId: initialRun.heroId,
       playerX: playerPos.x,
       playerY: playerPos.y,
       facing,
@@ -180,12 +292,16 @@ export function GamePlayView({
       openedChestIds: chests.filter((c) => c.opened).map((c) => c.id),
       checkpoint,
       wrongQuestionKeys: wrongPool,
-      stats,
+      stats: {
+        ...stats,
+        elapsedSeconds,
+      },
     };
     const updated = saveActiveRun(runState);
     onProgressUpdated(updated);
   }, [
     stage.id,
+    initialRun.heroId,
     playerPos.x,
     playerPos.y,
     facing,
@@ -200,6 +316,7 @@ export function GamePlayView({
     checkpoint,
     wrongPool,
     stats,
+    elapsedSeconds,
     isStageCleared,
     onProgressUpdated,
   ]);
@@ -290,16 +407,27 @@ export function GamePlayView({
       stats.totalProblemsAttempted > 0
         ? Math.round((stats.firstTryCorrect / stats.totalProblemsAttempted) * 100)
         : 100;
-    setStats((prev) => ({ ...prev, starsEarned: totalStarsForStage }));
+    setStats((prev) => ({ ...prev, starsEarned: totalStarsForStage, elapsedSeconds }));
     const nextProgress = recordStageClear(
       stage.id,
       totalStarsForStage,
       accuracy,
-      stats.solvedCount
+      stats.solvedCount,
+      elapsedSeconds
     );
     onProgressUpdated(nextProgress);
+    const clearedStageCount = ([1, 2, 3] as StageId[]).filter(
+      (id) => nextProgress.records[id].cleared
+    ).length;
+    syncWithPlayTime({
+      scoreDelta: stage.id * 100,
+      starsDelta: 0,
+      solvedDelta: 0,
+      clearedStageCount,
+      accuracy,
+    });
     setIsStageCleared(true);
-  }, [stars, stats, stage.id, onProgressUpdated]);
+  }, [stars, stats, elapsedSeconds, stage.id, onProgressUpdated, syncWithPlayTime]);
 
   const triggerInteraction = useCallback(
     (target: ActiveInteraction | null) => {
@@ -325,18 +453,26 @@ export function GamePlayView({
           setStars((s) => s + chest.amount);
           addFloatingText(chest.x, chest.y, `별 +${chest.amount}!`, '#FBBF24');
           showToast(`보물 상자 발견! ${chest.label}을(를) 얻었어요!`);
+          syncWithPlayTime({
+            scoreDelta: chest.amount * 20,
+            starsDelta: chest.amount,
+            solvedDelta: 0,
+          });
         } else if (chest.rewardType === 'heart') {
           setHearts((h) => Math.min(maxHearts, h + chest.amount));
           addFloatingText(chest.x, chest.y, '하트 회복!', '#FB7185');
           showToast(`보물 상자 발견! ${chest.label}으로 하트를 회복했어요!`);
+          syncWithPlayTime({ scoreDelta: 15, starsDelta: 0, solvedDelta: 0 });
         } else if (chest.rewardType === 'hint') {
           setHintItems((h) => h + chest.amount);
           addFloatingText(chest.x, chest.y, `힌트 +${chest.amount}!`, '#38BDF8');
           showToast(`보물 상자 발견! ${chest.label}을(를) 얻었어요!`);
+          syncWithPlayTime({ scoreDelta: 15, starsDelta: 0, solvedDelta: 0 });
         } else if (chest.rewardType === 'golden_key') {
           setGoldenKeys((k) => k + chest.amount);
           addFloatingText(chest.x, chest.y, '황금 열쇠!', '#FDE047');
           showToast(`보물 상자 발견! ${chest.label}로 잠긴 문을 바로 열 수 있어요!`);
+          syncWithPlayTime({ scoreDelta: 25, starsDelta: 0, solvedDelta: 0 });
         }
       } else if (target.type === 'exit') {
         completeStage();
@@ -350,6 +486,7 @@ export function GamePlayView({
       showToast,
       maxHearts,
       completeStage,
+      syncWithPlayTime,
     ]
   );
 
@@ -555,6 +692,7 @@ export function GamePlayView({
         ctx,
         stage,
         tileSize: TILE_SIZE,
+        heroId: initialRun.heroId,
         playerVisualX: visualX,
         playerVisualY: visualY,
         facing,
@@ -577,6 +715,7 @@ export function GamePlayView({
     return () => cancelAnimationFrame(rafId);
   }, [
     stage,
+    initialRun.heroId,
     playerPos.x,
     playerPos.y,
     facing,
@@ -643,36 +782,36 @@ export function GamePlayView({
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#121A24] text-slate-100">
-      {/* Top HUD Bar */}
-      <header className="border-b-2 border-[#2A3749] bg-[#182230] px-3 py-2.5 sm:px-6">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
+    <div className="flex h-dvh w-full flex-col overflow-hidden bg-[#121A24] text-slate-100 select-none">
+      {/* Compact Top HUD Bar */}
+      <header className="shrink-0 border-b-2 border-[#2A3749] bg-[#182230] px-3 py-2 sm:px-5">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2.5">
           {/* Stage Identity */}
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl border-2 border-[#261C15] bg-amber-400 px-3 py-1 font-display text-sm text-slate-950 whitespace-nowrap shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="rounded-xl border-2 border-[#261C15] bg-amber-400 px-2.5 py-1 font-display text-xs text-slate-950 whitespace-nowrap shrink-0 sm:text-sm">
               스테이지 {stage.id}
             </div>
             <div className="min-w-0">
-              <h1 className="font-display truncate text-lg text-white sm:text-xl">
+              <h1 className="font-display truncate text-base text-white sm:text-lg">
                 {stage.name}
               </h1>
-              <p className="text-xs font-medium text-slate-300 whitespace-nowrap">
+              <p className="text-[11px] font-medium text-slate-300 whitespace-nowrap sm:text-xs">
                 {stage.dansLabel} · 문 {openedDoorsCount}/{doors.length} · 적 {defeatedMonstersCount}/{monsters.length}
               </p>
             </div>
           </div>
 
-          {/* Hearts, Stars, Items, Audio & Pause */}
-          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+          {/* Hearts, Stars, Playtime, Items, Audio & Pause */}
+          <div className="flex flex-wrap items-center gap-2">
             {/* Hearts */}
             <div
-              className="flex items-center gap-1.5 rounded-xl border-2 border-[#261C15] bg-[#222F42] px-3 py-1.5 tabular-nums"
+              className="flex items-center gap-1 rounded-xl border-2 border-[#261C15] bg-[#222F42] px-2.5 py-1 tabular-nums"
               aria-label={`하트 ${hearts}개`}
             >
               {Array.from({ length: maxHearts }).map((_, i) => (
                 <Heart
                   key={i}
-                  className={`h-5 w-5 transition-transform ${
+                  className={`h-4 w-4 transition-transform sm:h-5 sm:w-5 ${
                     i < hearts
                       ? 'fill-rose-500 text-rose-400'
                       : 'fill-slate-700 text-slate-600'
@@ -685,21 +824,37 @@ export function GamePlayView({
             </div>
 
             {/* Stars */}
-            <div className="flex items-center gap-1.5 rounded-xl border-2 border-[#261C15] bg-[#222F42] px-3 py-1.5 font-display text-base text-amber-300 tabular-nums">
-              <Star className="h-5 w-5 fill-amber-400 text-amber-400" />
+            <div className="flex items-center gap-1 rounded-xl border-2 border-[#261C15] bg-[#222F42] px-2.5 py-1 font-display text-sm text-amber-300 tabular-nums sm:text-base">
+              <Star className="h-4 w-4 fill-amber-400 text-amber-400 sm:h-5 sm:w-5" />
               <span>{stars}</span>
+            </div>
+
+            {/* Playtime Clock */}
+            <div
+              className="flex items-center gap-1 rounded-xl border-2 border-[#261C15] bg-[#222F42] px-2.5 py-1 text-xs font-bold text-sky-200 tabular-nums sm:text-sm"
+              aria-label="플레이 시간"
+            >
+              <Clock className="h-4 w-4 text-sky-300" />
+              <span>{formatClockTime(elapsedSeconds)}</span>
+            </div>
+
+            {/* Student Live Score */}
+            <div className="hidden items-center gap-1.5 rounded-xl border-2 border-[#261C15] bg-emerald-900/80 px-2.5 py-1 text-xs font-bold text-emerald-100 tabular-nums md:flex">
+              <span>{studentSession.nickname}</span>
+              <span aria-hidden="true">·</span>
+              <span>{myLiveScore.toLocaleString()}점</span>
             </div>
 
             {/* Collected Inventory Items */}
             {hintItems > 0 && (
-              <div className="flex items-center gap-1 rounded-xl border-2 border-sky-700 bg-sky-950/70 px-2.5 py-1.5 text-xs font-bold text-sky-200 tabular-nums">
-                <Search className="h-4 w-4 text-sky-300" />
+              <div className="flex items-center gap-1 rounded-xl border-2 border-sky-700 bg-sky-950/70 px-2 py-1 text-xs font-bold text-sky-200 tabular-nums">
+                <Search className="h-3.5 w-3.5 text-sky-300" />
                 <span>힌트 {hintItems}</span>
               </div>
             )}
             {goldenKeys > 0 && (
-              <div className="flex items-center gap-1 rounded-xl border-2 border-amber-600 bg-amber-950/70 px-2.5 py-1.5 text-xs font-bold text-amber-200 tabular-nums">
-                <KeyRound className="h-4 w-4 text-amber-300" />
+              <div className="flex items-center gap-1 rounded-xl border-2 border-amber-600 bg-amber-950/70 px-2 py-1 text-xs font-bold text-amber-200 tabular-nums">
+                <KeyRound className="h-3.5 w-3.5 text-amber-300" />
                 <span>열쇠 {goldenKeys}</span>
               </div>
             )}
@@ -712,17 +867,20 @@ export function GamePlayView({
                 sound.setMuted(next);
                 setMuted(next);
               }}
-              className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-[#261C15] bg-[#222F42] text-slate-200 hover:bg-[#2C3B52] focus-visible:outline-2 focus-visible:outline-amber-400"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-[#261C15] bg-[#222F42] text-slate-200 hover:bg-[#2C3B52] focus-visible:outline-2 focus-visible:outline-amber-400"
               aria-label={muted ? '소리 켜기' : '소리 끄기'}
             >
-              {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+              {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
             </button>
 
             {/* Pause Button */}
             <button
               type="button"
-              onClick={() => setPaused(true)}
-              className="pixel-btn inline-flex h-10 items-center gap-1.5 rounded-xl border-2 border-[#261C15] bg-[#F5EFE0] px-3.5 font-display text-sm text-slate-900 whitespace-nowrap shrink-0"
+              onClick={() => {
+                flushPendingPlayTime();
+                setPaused(true);
+              }}
+              className="pixel-btn inline-flex h-9 items-center gap-1.5 rounded-xl border-2 border-[#261C15] bg-[#F5EFE0] px-3 font-display text-sm text-slate-900 whitespace-nowrap shrink-0"
             >
               <Pause className="h-4 w-4" />
               <span>일시정지</span>
@@ -731,79 +889,104 @@ export function GamePlayView({
         </div>
       </header>
 
-      {/* Center Maze Canvas Area */}
-      <main className="relative flex flex-1 flex-col items-center justify-center p-3 sm:p-5">
+      {/* Center Maze Canvas Area — Fills all remaining viewport space */}
+      <main
+        ref={mainAreaRef}
+        tabIndex={-1}
+        className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-1.5 outline-none sm:p-3"
+      >
+        {/* Absolute floating toast so it NEVER causes vertical layout jumps */}
         {bannerToast && (
-          <div className="pixel-box mb-3 flex items-center gap-2 rounded-xl border-2 border-[#261C15] bg-amber-300 px-4 py-2 font-display text-base text-slate-950">
+          <div className="pixel-box pointer-events-none absolute top-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-xl border-2 border-[#261C15] bg-amber-300 px-4 py-2 font-display text-sm text-slate-950 shadow-lg whitespace-nowrap sm:text-base">
             <Sparkles className="h-4 w-4 shrink-0" />
             <span>{bannerToast}</span>
           </div>
         )}
 
-        <div className="pixel-box overflow-hidden rounded-2xl border-4 border-[#261C15] bg-[#0D131B] p-1.5 sm:p-2">
+        <div className="pixel-box overflow-hidden rounded-2xl border-4 border-[#261C15] bg-[#0D131B] p-1 sm:p-1.5">
           <canvas
             ref={canvasRef}
             width={stage.width * TILE_SIZE}
             height={stage.height * TILE_SIZE}
             onClick={handleCanvasClick}
-            className="pixel-canvas block max-h-[60vh] w-auto max-w-full cursor-pointer rounded-xl object-contain sm:max-h-[65vh]"
+            style={
+              canvasBoxSize
+                ? {
+                    width: `${canvasBoxSize.width}px`,
+                    height: `${canvasBoxSize.height}px`,
+                  }
+                : undefined
+            }
+            className="pixel-canvas block cursor-pointer rounded-xl"
           />
         </div>
       </main>
 
-      {/* Bottom Controls Bar: D-Pad + Interact Button + Guide */}
-      <footer className="border-t-2 border-[#2A3749] bg-[#182230] px-4 py-3">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4">
-          {/* D-Pad (works on mobile touch & desktop mouse) */}
+      {/* Compact Bottom Controls Bar */}
+      <footer className="shrink-0 border-t-2 border-[#2A3749] bg-[#182230] px-3 py-2 sm:px-5">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
+          {/* Left: Optional D-pad + Keyboard hints */}
           <div className="flex items-center gap-3">
-            <div className="grid grid-cols-3 gap-1.5" role="group" aria-label="방향 이동 버튼">
-              <div />
-              <button
-                type="button"
-                onPointerDown={() => dpadPress('up')}
-                onPointerUp={dpadRelease}
-                onPointerLeave={dpadRelease}
-                className="pixel-btn flex h-11 w-11 items-center justify-center rounded-xl border-2 border-[#261C15] bg-[#2B3B52] text-white active:bg-amber-400 active:text-slate-950"
-                aria-label="위로 이동"
-              >
-                <ArrowUp className="h-5 w-5" />
-              </button>
-              <div />
-              <button
-                type="button"
-                onPointerDown={() => dpadPress('left')}
-                onPointerUp={dpadRelease}
-                onPointerLeave={dpadRelease}
-                className="pixel-btn flex h-11 w-11 items-center justify-center rounded-xl border-2 border-[#261C15] bg-[#2B3B52] text-white active:bg-amber-400 active:text-slate-950"
-                aria-label="왼쪽으로 이동"
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </button>
-              <button
-                type="button"
-                onPointerDown={() => dpadPress('down')}
-                onPointerUp={dpadRelease}
-                onPointerLeave={dpadRelease}
-                className="pixel-btn flex h-11 w-11 items-center justify-center rounded-xl border-2 border-[#261C15] bg-[#2B3B52] text-white active:bg-amber-400 active:text-slate-950"
-                aria-label="아래로 이동"
-              >
-                <ArrowDown className="h-5 w-5" />
-              </button>
-              <button
-                type="button"
-                onPointerDown={() => dpadPress('right')}
-                onPointerUp={dpadRelease}
-                onPointerLeave={dpadRelease}
-                className="pixel-btn flex h-11 w-11 items-center justify-center rounded-xl border-2 border-[#261C15] bg-[#2B3B52] text-white active:bg-amber-400 active:text-slate-950"
-                aria-label="오른쪽으로 이동"
-              >
-                <ArrowRight className="h-5 w-5" />
-              </button>
-            </div>
+            {showTouchDpad && (
+              <div className="grid grid-cols-3 gap-1" role="group" aria-label="방향 이동 버튼">
+                <div />
+                <button
+                  type="button"
+                  onPointerDown={() => dpadPress('up')}
+                  onPointerUp={dpadRelease}
+                  onPointerLeave={dpadRelease}
+                  className="pixel-btn flex h-10 w-10 items-center justify-center rounded-lg border-2 border-[#261C15] bg-[#2B3B52] text-white active:bg-amber-400 active:text-slate-950"
+                  aria-label="위로 이동"
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </button>
+                <div />
+                <button
+                  type="button"
+                  onPointerDown={() => dpadPress('left')}
+                  onPointerUp={dpadRelease}
+                  onPointerLeave={dpadRelease}
+                  className="pixel-btn flex h-10 w-10 items-center justify-center rounded-lg border-2 border-[#261C15] bg-[#2B3B52] text-white active:bg-amber-400 active:text-slate-950"
+                  aria-label="왼쪽으로 이동"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onPointerDown={() => dpadPress('down')}
+                  onPointerUp={dpadRelease}
+                  onPointerLeave={dpadRelease}
+                  className="pixel-btn flex h-10 w-10 items-center justify-center rounded-lg border-2 border-[#261C15] bg-[#2B3B52] text-white active:bg-amber-400 active:text-slate-950"
+                  aria-label="아래로 이동"
+                >
+                  <ArrowDown className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onPointerDown={() => dpadPress('right')}
+                  onPointerUp={dpadRelease}
+                  onPointerLeave={dpadRelease}
+                  className="pixel-btn flex h-10 w-10 items-center justify-center rounded-lg border-2 border-[#261C15] bg-[#2B3B52] text-white active:bg-amber-400 active:text-slate-950"
+                  aria-label="오른쪽으로 이동"
+                >
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
 
-            <div className="hidden text-xs leading-relaxed text-slate-300 md:block">
-              <p className="font-bold text-slate-100">이동: 방향키 또는 WASD</p>
-              <p>상호작용: 스페이스바 또는 대상 클릭</p>
+            <button
+              type="button"
+              onClick={() => setShowTouchDpad((v) => !v)}
+              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border-2 border-[#261C15] bg-[#222F42] px-3 py-1.5 text-xs font-bold text-slate-200 hover:bg-[#2C3B52] whitespace-nowrap shrink-0"
+            >
+              <Gamepad2 className="h-4 w-4 text-amber-300" />
+              <span>{showTouchDpad ? '화면 방향키 접기' : '화면 방향키 켜기'}</span>
+            </button>
+
+            <div className="hidden items-center gap-3 text-xs text-slate-300 md:flex">
+              <span className="font-bold text-slate-100">이동: 방향키 또는 WASD</span>
+              <span aria-hidden="true" className="text-slate-500">·</span>
+              <span>상호작용: 스페이스바 또는 대상 클릭</span>
             </div>
           </div>
 
@@ -813,7 +996,7 @@ export function GamePlayView({
               type="button"
               disabled={!nearbyInteraction}
               onClick={() => triggerInteraction(nearbyInteraction)}
-              className={`pixel-btn inline-flex min-h-[50px] items-center gap-2 rounded-xl border-3 border-[#261C15] px-5 py-2.5 font-display text-lg whitespace-nowrap shrink-0 ${
+              className={`pixel-btn inline-flex min-h-[44px] items-center gap-2 rounded-xl border-3 border-[#261C15] px-5 py-2 font-display text-base whitespace-nowrap shrink-0 sm:text-lg ${
                 nearbyInteraction
                   ? 'bg-amber-400 text-slate-950'
                   : 'cursor-not-allowed bg-slate-700 text-slate-400 opacity-65'
@@ -843,8 +1026,14 @@ export function GamePlayView({
           onSuccess={(firstTry, usedGoldenKey) => {
             if (usedGoldenKey) {
               setGoldenKeys((k) => Math.max(0, k - 1));
+              syncWithPlayTime({ scoreDelta: 10, starsDelta: 0, solvedDelta: 0 });
             } else {
               recordQuestionAttempt(activeDoor.question.key, true, firstTry);
+              syncWithPlayTime({
+                scoreDelta: firstTry ? 15 : 10,
+                starsDelta: 0,
+                solvedDelta: 1,
+              });
             }
             const door = activeDoor.door;
             setDoors((prev) =>
@@ -864,13 +1053,23 @@ export function GamePlayView({
       {activeBattle && (
         <BattleModal
           monster={activeBattle.monster}
+          heroId={initialRun.heroId}
           initialQuestion={activeBattle.question}
           playerHearts={hearts}
           maxHearts={maxHearts}
           hintItems={hintItems}
           wrongPool={wrongPool}
           onUseHintItem={() => setHintItems((h) => Math.max(0, h - 1))}
-          onRecordAttempt={recordQuestionAttempt}
+          onRecordAttempt={(qKey, isCorrect, isFirstTry) => {
+            recordQuestionAttempt(qKey, isCorrect, isFirstTry);
+            if (isCorrect) {
+              syncWithPlayTime({
+                scoreDelta: isFirstTry ? 15 : 10,
+                starsDelta: 0,
+                solvedDelta: 1,
+              });
+            }
+          }}
           onPlayerHurt={() => {
             const next = Math.max(0, hearts - 1);
             setHearts(next);
@@ -882,9 +1081,16 @@ export function GamePlayView({
               prev.map((mon) => (mon.id === m.id ? { ...mon, hp: 0, defeated: true } : mon))
             );
             setStars((s) => s + rewardStars);
+            syncWithPlayTime({
+              scoreDelta: rewardStars * 20,
+              starsDelta: rewardStars,
+              solvedDelta: 0,
+            });
             spawnBurst(m.x, m.y, ['#FBBF24', '#F472B6', '#FFFFFF'], 24);
             addFloatingText(m.x, m.y, `승리! 별 +${rewardStars}`, '#FDE047');
-            if (m.x === stage.midCheckpoint.x - 1 || m.id === 's1_m1' || m.id === 's2_m1') {
+            if (m.id === 's3_m5') {
+              setCheckpoint({ x: m.x, y: m.y });
+            } else if (m.id === 's1_m2' || m.id === 's2_m2') {
               setCheckpoint(stage.midCheckpoint);
             }
             setActiveBattle(null);
@@ -893,6 +1099,7 @@ export function GamePlayView({
             }
           }}
           onGameOver={() => {
+            flushPendingPlayTime();
             setActiveBattle(null);
             setIsGameOver(true);
           }}
@@ -904,10 +1111,12 @@ export function GamePlayView({
           stageName={`스테이지 ${stage.id} · ${stage.name}`}
           onResume={() => setPaused(false)}
           onRestartStage={() => {
+            flushPendingPlayTime();
             setPaused(false);
             onSwitchStage(stage.id);
           }}
           onGoHome={() => {
+            flushPendingPlayTime();
             setPaused(false);
             onGoHome();
           }}
@@ -931,6 +1140,7 @@ export function GamePlayView({
             showToast('하트 3개가 모두 회복되었어요! 다시 힘차게 도전해요!');
           }}
           onGoHome={() => {
+            flushPendingPlayTime();
             setIsGameOver(false);
             onGoHome();
           }}
@@ -941,7 +1151,7 @@ export function GamePlayView({
         <StageClearModal
           stageId={stage.id}
           stageName={stage.name}
-          stats={stats}
+          stats={{ ...stats, elapsedSeconds }}
           isFinalGameClear={stage.id === 3}
           onReplay={() => onSwitchStage(stage.id)}
           onNextStage={() => onSwitchStage((stage.id + 1) as StageId)}

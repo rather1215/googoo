@@ -38,15 +38,100 @@
 }
 
 @keyframes hitShake {
-  0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-8px); }
-  40% { transform: translateX(8px); }
-  60% { transform: translateX(-6px); }
-  80% { transform: translateX(6px); }
+  0%, 100% { transform: translate(0, 0); }
+  15% { transform: translate(-11px, 3px); }
+  30% { transform: translate(11px, -3px); }
+  45% { transform: translate(-9px, -2px); }
+  65% { transform: translate(8px, 2px); }
+  85% { transform: translate(-4px, 0); }
 }
 
 .animate-hit-shake {
-  animation: hitShake 360ms ease-in-out;
+  animation: hitShake 420ms ease-in-out;
+}
+
+@keyframes monsterRecoil {
+  0% { transform: translate(0, 0) scale(1) rotate(0deg); }
+  16% { transform: translate(24px, -14px) scale(1.18, 0.8) rotate(14deg); }
+  36% { transform: translate(-12px, 6px) scale(0.9, 1.08) rotate(-9deg); }
+  56% { transform: translate(14px, -6px) scale(1.06, 0.92) rotate(6deg); }
+  78% { transform: translate(-6px, 2px) scale(0.97, 1.03) rotate(-3deg); }
+  100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+}
+
+.animate-monster-recoil {
+  animation: monsterRecoil 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes heroRecoil {
+  0% { transform: translate(0, 0) scale(1) rotate(0deg); }
+  16% { transform: translate(-24px, -12px) scale(1.16, 0.82) rotate(-14deg); }
+  36% { transform: translate(10px, 5px) scale(0.9, 1.08) rotate(8deg); }
+  58% { transform: translate(-12px, -4px) scale(1.05, 0.94) rotate(-5deg); }
+  80% { transform: translate(5px, 1px) scale(0.98, 1.02) rotate(2deg); }
+  100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+}
+
+.animate-hero-recoil {
+  animation: heroRecoil 500ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes monsterDefeat {
+  0% { transform: translate(0, 0) scale(1) rotate(0deg); opacity: 1; }
+  25% { transform: translate(20px, -16px) scale(1.2) rotate(18deg); opacity: 1; }
+  100% { transform: translate(30px, 22px) scale(0) rotate(54deg); opacity: 0; }
+}
+
+.animate-monster-defeat {
+  animation: monsterDefeat 780ms ease-in forwards;
+}
+
+@keyframes damagePop {
+  0% { transform: translateY(6px) scale(0.5); opacity: 0; }
+  22% { transform: translateY(-12px) scale(1.24); opacity: 1; }
+  75% { transform: translateY(-24px) scale(1); opacity: 1; }
+  100% { transform: translateY(-34px) scale(0.88); opacity: 0; }
+}
+
+.animate-damage-pop {
+  animation: damagePop 680ms ease-out forwards;
+}
+
+@keyframes slashFlash {
+  0% { transform: scale(0.35) rotate(-22deg); opacity: 0; }
+  28% { transform: scale(1.25) rotate(4deg); opacity: 1; }
+  100% { transform: scale(1.45) rotate(14deg); opacity: 0; }
+}
+
+.animate-slash-flash {
+  animation: slashFlash 400ms ease-out forwards;
+}
+
+@keyframes impactRing {
+  0% { transform: scale(0.25); opacity: 0.95; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+
+.animate-impact-ring {
+  animation: impactRing 440ms ease-out forwards;
+}
+
+@keyframes sparkBurst {
+  0% { transform: translate(0, 0) scale(1.1); opacity: 1; }
+  100% { transform: translate(var(--sx, 28px), var(--sy, -28px)) scale(0.2); opacity: 0; }
+}
+
+.animate-spark-burst {
+  animation: sparkBurst 460ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes arenaFlash {
+  0% { opacity: 0.75; }
+  100% { opacity: 0; }
+}
+
+.animate-arena-flash {
+  animation: arenaFlash 340ms ease-out forwards;
 }
 
 @keyframes floatBob {
@@ -60,6 +145,14 @@
 
 @media (prefers-reduced-motion: reduce) {
   .animate-hit-shake,
+  .animate-monster-recoil,
+  .animate-hero-recoil,
+  .animate-monster-defeat,
+  .animate-damage-pop,
+  .animate-slash-flash,
+  .animate-impact-ring,
+  .animate-spark-burst,
+  .animate-arena-flash,
   .animate-float-bob {
     animation: none;
   }

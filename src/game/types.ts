@@ -1,5 +1,46 @@
 export type StageId = 1 | 2 | 3;
 
+export type HeroId = 'explorer' | 'knight' | 'mage' | 'cat_ranger';
+
+export interface HeroOption {
+  id: HeroId;
+  name: string;
+  title: string;
+  description: string;
+  accentBg: string;
+}
+
+export const HERO_OPTIONS: HeroOption[] = [
+  {
+    id: 'explorer',
+    name: '용감한 탐험가',
+    title: '빨간 모자',
+    description: '어떤 미로든 두렵지 않은 씩씩한 모험가예요.',
+    accentBg: 'bg-rose-100',
+  },
+  {
+    id: 'knight',
+    name: '은빛 꼬마 기사',
+    title: '황금 방패',
+    description: '반짝이는 투구를 쓰고 친구들을 지키는 기사예요.',
+    accentBg: 'bg-sky-100',
+  },
+  {
+    id: 'mage',
+    name: '별빛 견습 마법사',
+    title: '마법 모자',
+    description: '구구단 주문으로 문을 여는 똑똑한 마법사예요.',
+    accentBg: 'bg-violet-100',
+  },
+  {
+    id: 'cat_ranger',
+    name: '고양이 숲 순찰대',
+    title: '초록 망토',
+    description: '숨겨진 보물 상자를 척척 찾아내는 재빠른 대원이에요.',
+    accentBg: 'bg-emerald-100',
+  },
+];
+
 export type GameScreen =
   | 'TITLE'
   | 'PLAYING'
@@ -70,7 +111,7 @@ export interface StageDefinition {
 }
 
 export interface Question {
-  key: string; // e.g. "6x7"
+  key: string;
   a: number;
   b: number;
   answer: number;
@@ -105,10 +146,12 @@ export interface StageStats {
   firstTryCorrect: number;
   totalProblemsAttempted: number;
   starsEarned: number;
+  elapsedSeconds: number;
 }
 
 export interface ActiveRunState {
   stageId: StageId;
+  heroId: HeroId;
   playerX: number;
   playerY: number;
   facing: Direction;
@@ -133,10 +176,12 @@ export interface StageRecord {
 }
 
 export interface SavedProgress {
+  selectedHero: HeroId;
   unlockedStages: StageId[];
   records: Record<StageId, StageRecord>;
   totalStars: number;
   totalSolved: number;
+  totalPlayTimeSeconds: number;
   activeRun: ActiveRunState | null;
 }
 
