@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Noto Sans KR', system-ui, -apple-system, sans-serif;
+    overscroll-behavior: none;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: 'Jua', 'Noto Sans KR', system-ui, sans-serif;
+  }
+}
+
+/* Pixel-art RPG frame utilities */
+.pixel-box {
+  box-shadow:
+    0 4px 0 0 #261C15,
+    inset 0 2px 0 0 rgba(255, 255, 255, 0.7);
+}
+
+.pixel-btn {
+  box-shadow: 0 4px 0 0 rgba(0, 0, 0, 0.35);
+  transition: transform 80ms ease, box-shadow 80ms ease, filter 120ms ease;
+}
+
+.pixel-btn:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.pixel-btn:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 0 rgba(0, 0, 0, 0.35);
+}
+
+.pixel-canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+@keyframes hitShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(6px); }
+}
+
+.animate-hit-shake {
+  animation: hitShake 360ms ease-in-out;
+}
+
+@keyframes floatBob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+.animate-float-bob {
+  animation: floatBob 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-hit-shake,
+  .animate-float-bob {
+    animation: none;
+  }
+}
